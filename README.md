@@ -19,7 +19,7 @@ on the master branch which is not intended to be production ready all of the tim
 
 ```bash
 cd <extension-dir>
-cv dl biz.jmaconsulting.grantfinancialsupport@https://lab.civicrm.org/extensions/multifund/-/archive/0.1/multifund-0.1.zip
+cv dl biz.jmaconsulting.grantfinancialsupport@https://github.com/JMAConsulting/biz.jmaconsulting.grantfinancialsupport/archive/0.1.zip
 ```
 
 ## Installation (CLI, Git)
