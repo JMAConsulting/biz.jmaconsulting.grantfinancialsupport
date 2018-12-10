@@ -178,7 +178,7 @@ function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
       _createFinancialEntries(NULL, [
         'id' => $currentParams['id'],
         'contact_id' => $params['contact_id'],
-        'curreny' => CRM_Core_Config::singleton()->defaultCurrency,
+        'currency' => CRM_Core_Config::singleton()->defaultCurrency,
       ], $currentParams);
     }
   }
