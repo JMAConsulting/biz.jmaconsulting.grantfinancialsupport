@@ -84,7 +84,7 @@ function grantfinancialsupport_civicrm_buildForm($formName, &$form) {
     //Financial Type RG-125
     $financialType = CRM_Contribute_PseudoConstant::financialType();
     foreach ($financialType as $id => $dontCare) {
-      if (!CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($id, 'Expense Account is')) {
+      if (!CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($id, ['IN' => ['Grant Expense Account is', 'Expense Account is']])) {
         unset($financialType[$id]);
       }
     }
@@ -165,7 +165,23 @@ function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
         }
       }
       elseif ($params['status_id'] == $paidStatusID && $attributesChanged['amountChanged']) {
-        _updateFinancialEntries($previousGrant['id'], $previousGrant['amount_total'], $params['amount_total'], $params);
+        $multiEntries = _processMultiFundEntries($_POST);
+        $entries = civicrm_api3('EntityFinancialTrxn', 'get', [
+          'entity_id' => $previousGrant['id'],
+          'entity_table' => 'civicrm_grant',
+          'sequential' => 1,
+        ])['values'];
+        foreach ($entries as $key => $entry) {
+          if (empty($multiEntries)) {
+            $newAmount = CRM_Utils_Rule::cleanMoney($params['amount_total']);
+            $newFFAID = CRM_Core_DAO::getFieldValue('CRM_Core_BAO_FinancialTrxn', $entry['id'], 'from_financial_account_id');
+          }
+          else {
+            $newAmount = $multiEntries[$key]['total_amount'];
+            $newFFAID = $multiEntries[$key]['from_financial_account_id'];
+          }
+          _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $params);
+        }
       }
     }
     elseif (!empty($params['financial_type_id'])) {
@@ -190,23 +206,12 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
   }
 }
 
-function _updateFinancialEntries($grantID, $previousAmount, $newAmount, $params) {
-  $multiEntries = _processMultiFundEntries($_POST);
-  $entries = civicrm_api3('EntityFinancialTrxn', 'get', [
-    'entity_id' => $grantID,
-    'entity_table' => 'civicrm_grant',
-    'sequential' => 1,
-  ])['values'];
-  if (count($entries) > 1) {
-    foreach ($entries as $id => $entry) {
-    }
-  }
-  elseif (count($entries) == 1) {
-    civicrm_api3('EntityFinancialTrxn', 'create', ['id' => $entries[0]['id'], 'amount' => $newAmount]);
-    $financialTrxnID = $entries[0]['financial_trxn_id'];
+function _updateFinancialEntries($entityFinancialTrxnID, $financialTrxnID, $newFFAID, $newAmount, $params) {
+    civicrm_api3('EntityFinancialTrxn', 'create', ['id' => $entityFinancialTrxnID, 'amount' => $newAmount]);
     civicrm_api3('FinancialTrxn', 'create', [
       'id' => $financialTrxnID,
       'total_amount' => $newAmount,
+      'from_financial_account_id' => $newFFAID,
       'check_number' => CRM_Utils_Array::value('check_number', $params),
       'trxn_id' => CRM_Utils_Array::value('trxn_id', $params),
       'trxn_date' => CRM_Utils_Array::value('trxn_date', $params, date('YmdHis')),
@@ -217,18 +222,17 @@ function _updateFinancialEntries($grantID, $previousAmount, $newAmount, $params)
       'options' => [
         'limit' => 1,
       ],
-    ])['entity_id'];
+    ]);
 
     civicrm_api3('FinancialItem', 'create', [
       'id' => $values['entity_id'],
-      'amount' => $newAmount,
+      'amount' => CRM_Utils_Rule::cleanMoney($params['amount_total']),
       'financial_account_id' => CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Accounts Receivable Account is'),
     ]);
     civicrm_api3('EntityFinancialTrxn', 'create', [
       'id' => $values['id'],
       'amount' => $newAmount,
     ]);
-  }
 }
 
 function _setDefaultFinancialEntries($grantID) {
@@ -290,7 +294,7 @@ function _createFinancialEntries($previousStatusID, $grantParams, $params) {
       $currentStatusID == array_search('Paid', $grantStatuses)
     ) {
       $multiEntries[] = [
-        'from_financial_account_id' => CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Accounts Receivable Account is'),
+        'from_financial_account_id' => CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], ['IN' => ['Grant Expense Account is', 'Expense Account is']]),
         'total_amount' => $amount,
       ];
     }

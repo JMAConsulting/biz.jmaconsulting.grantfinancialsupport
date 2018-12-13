@@ -135,4 +135,24 @@ class CRM_Grantfinancialsupport_Util {
     }
   }
 
+  public static function updateFinancialAccountRelationship(
+    $entityTable = 'civicrm_grant',
+    $oldAccountRelationship = 'Expense Account is',
+    $newAccountRelationship = 'Grant Expense Account is'
+  ) {
+    $grantExpenseAccountID = civicrm_api3('OptionValue', 'getvalue', [
+      'option_group_id' => 'account_relationship',
+      'name' => $newAccountRelationship,
+      'return' => 'value',
+    ]);
+    $dao = CRM_Core_DAO::executeQuery('SELECT DISTINCT financial_type_id FROM ' . $entityTable);
+    while ($dao->fetch()) {
+      if (!empty($dao->financial_type_id) && (
+        $efaID = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($dao->financial_type_id, $oldAccountRelationship, 'civicrm_financial_type', 'id'))
+      ) {
+        civicrm_api3('EntityFinancialAccount', 'create', ['id' => $efaID, 'account_relationship' => $grantExpenseAccountID]);
+      }
+    }
+  }
+
 }
