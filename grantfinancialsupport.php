@@ -83,11 +83,15 @@ function grantfinancialsupport_civicrm_buildForm($formName, &$form) {
 
     //Financial Type RG-125
     $financialType = CRM_Contribute_PseudoConstant::financialType();
-    foreach ($financialType as $id => $dontCare) {
-      if (!CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($id, ['IN' => ['Grant Expense Account is', 'Expense Account is']])) {
-        unset($financialType[$id]);
-      }
+    $result = civicrm_api3('EntityFinancialAccount', 'get', [
+      'account_relationship' => ['IN' => ["Expense Account is", "Grant Expense Account is"]],
+      'entity_table' => "civicrm_financial_type",
+      'options' => ['limit' => 0],
+    ])['values'];
+    foreach ($result as $k => $v) {
+      $typesWithExpenseAccounts[$v['entity_id']] = 1;
     }
+    $financialType = array_intersect_key($financialType, $typesWithExpenseAccounts);
     if (count($financialType)) {
       $form->assign('financialType', $financialType);
     }
