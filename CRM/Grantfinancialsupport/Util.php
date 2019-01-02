@@ -91,7 +91,7 @@ class CRM_Grantfinancialsupport_Util {
         'htmlType' => 'select',
         'name' => 'contribution_batch_id',
         'title' => ts('Assign to Batch'),
-        'attributes' => ['' => ts('None')] + CRM_Contribute_PseudoConstant::batch(),
+        'attributes' => ['' => ts('None')] + CRM_Utils_Array::collect('title', civicrm_api3('Batch', 'get', ['status_id' => 'Open'])['values']),
         'is_required' => $print,
       ],
     );
