@@ -145,62 +145,67 @@ function grantfinancialsupport_civicrm_pageRun(&$page) {
 
 function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
   if ($objectName == 'Grant' && in_array($op, ['edit', 'create'])) {
+    CRM_Core_Smarty::singleton()->assign('grantParams', $params);
     if ($id) {
       $previousGrant = civicrm_api3('Grant', 'getsingle', ['id' => $id]);
+      CRM_Core_Smarty::singleton()->assign('previousGrant', $previousGrant);
+      CRM_Core_Smarty::singleton()->assign('isUpdate', TRUE);
+    }
+    elseif (!empty($params['financial_type_id'])) {
+      CRM_Core_Smarty::singleton()->assign('isCreate', TRUE);
+    }
+  }
+}
+
+function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objectRef) {
+  if ($objectName == 'Grant' && $op == 'create') {
+    $grantParams = CRM_Core_Smarty::singleton()->get_template_vars('grantParams');
+    if (!empty($grantParams) && CRM_Core_Smarty::singleton()->get_template_vars('isCreate')) {
+      _createFinancialEntries(NULL, [
+        'id' => $objectId,
+        'contact_id' => $grantParams['contact_id'],
+        'currency' => CRM_Core_Config::singleton()->defaultCurrency,
+      ], $grantParams);
+    }
+    if (CRM_Core_Smarty::singleton()->get_template_vars('isUpdate')) {
+      $previousGrant = CRM_Core_Smarty::singleton()->get_template_vars('previousGrant');
       $grantStatuses = CRM_Core_OptionGroup::values('grant_status');
-      $paidStatusID = CRM_Core_PseudoConstant::getKey('CRM_Grant_DAO_Grant', 'status_id', 'Paid');
       $attributesChanged = [
-        'statusChanged' => (!empty($params['financial_type_id']) && ($params['status_id'] != $previousGrant['status_id'])),
-        'amountChanged' => ($previousGrant['amount_total'] != $params['amount_total']),
+        'statusChanged' => (!empty($grantParams['financial_type_id']) && ($grantParams['status_id'] != $previousGrant['status_id'])),
+        'amountChanged' => ($previousGrant['amount_total'] != $grantParams['amount_total']),
       ];
       if ($attributesChanged['statusChanged']) {
-        if ($params['status_id'] == $paidStatusID) {
+        if ($grantParams['status_id'] == array_search('Paid', $grantStatuses)) {
           $previousStatusID = ($previousGrant['status_id'] == array_search('Approved for Payment', $grantStatuses)) ? $previousGrant['status_id'] : NULL;
-          _createFinancialEntries($previousStatusID, $previousGrant, $params);
+          _createFinancialEntries($previousStatusID, $previousGrant, $grantParams);
         }
-        elseif ($params['status_id'] == array_search('Withdrawn', $grantStatuses) ||
-          $params['status_id'] == array_search('Approved for Payment', $grantStatuses)
-        ) {
-          _createFinancialEntries($previousGrant['status_id'], $previousGrant, $params);
+        elseif ($grantParams['status_id'] == array_search('Withdrawn', $grantStatuses) ||
+          $grantParams['status_id'] == array_search('Approved for Payment', $grantStatuses)) {
+          _createFinancialEntries($previousGrant['status_id'], $previousGrant, $grantParams);
         }
       }
-      elseif ($params['status_id'] == $paidStatusID && $attributesChanged['amountChanged']) {
-        $multiEntries = _processMultiFundEntries($_POST);
+      elseif ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['amountChanged']) {
+        $multiEntries = _processMultiFundEntries($grantParams);
         $entries = civicrm_api3('EntityFinancialTrxn', 'get', [
           'entity_id' => $previousGrant['id'],
           'entity_table' => 'civicrm_grant',
           'sequential' => 1,
         ])['values'];
+        // FIXME: Add function here to create new financial records.
         foreach ($entries as $key => $entry) {
           if (empty($multiEntries)) {
-            $newAmount = CRM_Utils_Rule::cleanMoney($params['amount_total']);
+            $newAmount = CRM_Utils_Rule::cleanMoney($grantParams['amount_total']);
             $newFFAID = CRM_Core_DAO::getFieldValue('CRM_Core_BAO_FinancialTrxn', $entry['id'], 'from_financial_account_id');
           }
           else {
             $newAmount = $multiEntries[$key]['total_amount'];
             $newFFAID = $multiEntries[$key]['from_financial_account_id'];
           }
-          _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $params);
+          _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $grantParams);
         }
       }
     }
-    elseif (!empty($params['financial_type_id'])) {
-      $currentParams = array_merge($params, [
-        'id' => CRM_Core_DAO::singleValueQuery(
-          sprintf("SELECT AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = 'civicrm_grant'",
-           DB::parseDSN(CRM_Core_Config::singleton()->dsn)['database'])
-         ),
-      ]);
-      _createFinancialEntries(NULL, [
-        'id' => $currentParams['id'],
-        'contact_id' => $params['contact_id'],
-        'currency' => CRM_Core_Config::singleton()->defaultCurrency,
-      ], $currentParams);
-    }
   }
-}
-
-function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objectRef) {
   if ($objectName == 'Grant' && $op == 'delete') {
     E::deleteGrantFinancialEntries($objectId);
   }
@@ -251,7 +256,7 @@ function _setDefaultFinancialEntries($grantID) {
 
 function _createFinancialEntries($previousStatusID, $grantParams, $params) {
   $grantStatuses = CRM_Core_OptionGroup::values('grant_status');
-  $multiEntries = _processMultiFundEntries($_POST);
+  $multiEntries = _processMultiFundEntries($params);
   $amount = $params['amount_total'];
   $contributionStatuses = CRM_Contribute_PseudoConstant::contributionStatus(NULL, 'name');
   $financialItemStatus = CRM_Core_PseudoConstant::accountOptionValues('financial_item_status');
