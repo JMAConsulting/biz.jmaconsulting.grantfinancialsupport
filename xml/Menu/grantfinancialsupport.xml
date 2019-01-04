@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<menu>
+  <item>
+    <path>civicrm/getfinancialtransaction</path>
+    <page_callback>CRM_Grantfinancialsupport_Util::getFinancialTransactionsList</page_callback>
+    <access_arguments>access CiviCRM</access_arguments>
+  </item>
+</menu>
