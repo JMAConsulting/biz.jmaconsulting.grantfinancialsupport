@@ -171,8 +171,8 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
       $previousGrant = CRM_Core_Smarty::singleton()->get_template_vars('previousGrant');
       $grantStatuses = CRM_Core_OptionGroup::values('grant_status');
       $attributesChanged = [
-        'statusChanged' => (!empty($grantParams['financial_type_id']) && ($grantParams['status_id'] != $previousGrant['status_id'])),
-        'amountChanged' => ($previousGrant['amount_total'] != $grantParams['amount_total']),
+        'statusChanged' => (!empty($params['financial_type_id']) && ($params['status_id'] != $previousGrant['status_id'])),
+        'amountChanged' => ($previousGrant['amount_total'] != CRM_Utils_Rule::cleanMoney($params['amount_total'])),
       ];
       if ($attributesChanged['statusChanged']) {
         if ($grantParams['status_id'] == array_search('Paid', $grantStatuses)) {
@@ -204,10 +204,36 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
           _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $grantParams);
         }
       }
+      elseif (!empty($params['contribution_batch_id'])) {
+        _updateBatchEntry($params['contribution_batch_id'], $id);
+      }
     }
   }
   if ($objectName == 'Grant' && $op == 'delete') {
     E::deleteGrantFinancialEntries($objectId);
+  }
+}
+
+function _updateBatchEntry($batchID, $grantID) {
+  foreach (_setDefaultFinancialEntries($grantID, TRUE) as $ftID) {
+    $result = civicrm_api3('EntityBatch', 'get', [
+      'entity_table' => 'civicrm_financial_trxn',
+      'entity_id' => $ftID['id'],
+    ])['values'];
+    if (!empty($result)) {
+      foreach ($result as $id => $value) {
+        if ($value['batch_id'] != $batchID) {
+          civicrm_api3('EntityBatch', 'create', array_merge($value, ['batch_id' => $batchID]));
+        }
+      }
+    }
+    else {
+      civicrm_api3('EntityBatch', 'create', [
+        'entity_table' => 'civicrm_financial_trxn',
+        'entity_id' => $ftID['id'],
+        'batch_id' => $batchID,
+      ]);
+    }
   }
 }
 
@@ -240,18 +266,29 @@ function _updateFinancialEntries($entityFinancialTrxnID, $financialTrxnID, $newF
     ]);
 }
 
-function _setDefaultFinancialEntries($grantID) {
-  $sql = "SELECT ft.check_number, ft.trxn_date, ft.trxn_id, b.id as contribution_batch_id, fi.description
+function _setDefaultFinancialEntries($grantID, $getFTIDs = FALSE) {
+  $select = "SELECT ft.check_number, ft.trxn_date, ft.trxn_id, b.id as contribution_batch_id, fi.description";
+  if ($getFTIDs) {
+    $select = "SELECT DISTINCT ft.id ";
+  }
+  $sql = " {$select}
     FROM civicrm_entity_financial_trxn eft
     INNER JOIN civicrm_financial_trxn ft ON eft.financial_trxn_id = ft.id AND eft.entity_table = 'civicrm_grant' AND eft.entity_id = $grantID
     LEFT JOIN civicrm_entity_financial_trxn eft1 ON eft1.financial_trxn_id = ft.id AND eft1.entity_table = 'civicrm_financial_item'
     LEFT JOIN civicrm_financial_item fi ON eft1.entity_id = fi.id
     LEFT JOIN civicrm_entity_batch eb ON eb.entity_table ='civicrm_financial_trxn' AND eb.entity_id = ft.id
     LEFT JOIN civicrm_batch b ON b.id = eb.batch_id
-    ORDER BY eft.id DESC
-    LIMIT 1
+
   ";
-  return CRM_Utils_Array::value(0, CRM_Core_DAO::executeQuery($sql)->fetchAll(), []);
+  if (!$getFTIDs) {
+    $sql .= ' ORDER BY eft.id DESC LIMIT 1';
+    return CRM_Utils_Array::value(0, CRM_Core_DAO::executeQuery($sql)->fetchAll(), []);
+  }
+  else {
+    $sql .= ' GROUP BY ft.id ';
+    return CRM_Core_DAO::executeQuery($sql)->fetchAll();
+  }
+
 }
 
 function _createFinancialEntries($previousStatusID, $grantParams, $params) {

@@ -34,7 +34,7 @@ class CRM_Grantfinancialsupport_Util {
       LEFT JOIN civicrm_financial_item fi ON eft1.entity_id = fi.id
       LEFT JOIN civicrm_entity_batch eb ON eb.entity_table ='civicrm_financial_trxn' AND eb.entity_id = ft.id
       LEFT JOIN civicrm_batch b ON b.id = eb.batch_id
-      GROUP BY eft.entity_id
+      GROUP BY eft.entity_id, fi.id, eb.batch_id
     ";
     $dao = CRM_Core_DAO::executeQuery($sql);
     while($dao->fetch()) {
