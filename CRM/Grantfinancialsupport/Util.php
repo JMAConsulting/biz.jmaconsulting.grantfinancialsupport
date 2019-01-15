@@ -32,11 +32,12 @@ class CRM_Grantfinancialsupport_Util {
       GROUP_CONCAT(DISTINCT(ft.id)) AS trxn,
       GROUP_CONCAT(DISTINCT(eft.id)) AS entity_trxn_1,
       GROUP_CONCAT(DISTINCT(eft2.id)) AS entity_trxn_2,
-      GROUP_CONCAT(DISTINCT(b.id))
+      GROUP_CONCAT(DISTINCT(b.id)) AS batches
       FROM civicrm_financial_item fi
       INNER JOIN civicrm_entity_financial_trxn eft ON eft.entity_id = fi.id AND eft.entity_table = 'civicrm_financial_item'
       INNER JOIN civicrm_financial_trxn ft ON ft.id = eft.financial_trxn_id
       INNER JOIN civicrm_entity_financial_trxn eft2 ON eft2.financial_trxn_id = ft.id
+      LEFT JOIN civicrm_entity_batch b ON b.entity_id = ft.id AND b.entity_table = 'civicrm_financial_trxn'
       WHERE fi.entity_table = 'civicrm_grant' AND fi.entity_id = {$grantID}";
     $dao = CRM_Core_DAO::executeQuery($sql);
     while($dao->fetch()) {
@@ -61,8 +62,8 @@ class CRM_Grantfinancialsupport_Util {
           civicrm_api3('EntityFinancialTrxn', 'delete', ['id' => $id]);
         }
       }
-      if ($dao->batch_id) {
-        CRM_Core_DAO::executeQuery("DELETE FROM civicrm_entity_batch WHERE entity_id IN ($dao->ft_id) AND entity_table = 'civicrm_financial_trxn' AND batch_id = $dao->batch_id ");
+      if ($dao->batches) {
+        CRM_Core_DAO::executeQuery("DELETE FROM civicrm_entity_batch WHERE entity_id IN ($dao->trxn) AND entity_table = 'civicrm_financial_trxn' AND batch_id IN ($dao->batches)");
       }
     }
   }
