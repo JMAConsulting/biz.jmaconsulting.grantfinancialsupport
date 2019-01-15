@@ -149,10 +149,17 @@ function grantfinancialsupport_civicrm_pageRun(&$page) {
 
 function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
   if ($objectName == 'Grant' && in_array($op, ['edit', 'create'])) {
-    CRM_Core_Smarty::singleton()->assign('grantParams', $params);
+    CRM_Core_Smarty::singleton()->assign('isCreate', FALSE);
+    CRM_Core_Smarty::singleton()->assign('isUpdate', FALSE);
+    CRM_Core_Smarty::singleton()->assign("grantParams", $params);
     if ($id) {
+      // Store grant values.
       $previousGrant = civicrm_api3('Grant', 'getsingle', ['id' => $id]);
       CRM_Core_Smarty::singleton()->assign('previousGrant', $previousGrant);
+
+      // Store multifund entries.
+      $previousFund = _getFinancialEntries($id);
+      CRM_Core_Smarty::singleton()->assign('previousFund', $previousFund);
       CRM_Core_Smarty::singleton()->assign('isUpdate', TRUE);
     }
     elseif (!empty($params['financial_type_id'])) {
@@ -164,6 +171,7 @@ function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
 function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objectRef) {
   if ($objectName == 'Grant' && $op == 'create') {
     $grantParams = CRM_Core_Smarty::singleton()->get_template_vars('grantParams');
+    CRM_Core_Smarty::singleton()->assign("grantParams", NULL);
     if (!empty($grantParams) && CRM_Core_Smarty::singleton()->get_template_vars('isCreate')) {
       _createFinancialEntries(NULL, [
         'id' => $objectId,
@@ -172,11 +180,22 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
       ], $grantParams);
     }
     if (CRM_Core_Smarty::singleton()->get_template_vars('isUpdate')) {
+      $grantParams['grant_id'] = $objectId;
+      // Get previous grant values.
       $previousGrant = CRM_Core_Smarty::singleton()->get_template_vars('previousGrant');
+      CRM_Core_Smarty::singleton()->assign('previousGrant', NULL);
+
+      // Get previous multifund values.
+      $previousFund = CRM_Core_Smarty::singleton()->get_template_vars('previousFund');
+      CRM_Core_Smarty::singleton()->assign('previousFund', NULL);
+
       $grantStatuses = CRM_Core_OptionGroup::values('grant_status');
       $attributesChanged = [
-        'statusChanged' => (!empty($params['financial_type_id']) && ($params['status_id'] != $previousGrant['status_id'])),
-        'amountChanged' => ($previousGrant['amount_total'] != CRM_Utils_Rule::cleanMoney($params['amount_total'])),
+        'statusChanged' => (!empty($grantParams['financial_type_id']) && ($grantParams['status_id'] != $previousGrant['status_id'])),
+        'amountChanged' => (CRM_Utils_Rule::cleanMoney($previousGrant['amount_total']) != CRM_Utils_Rule::cleanMoney($grantParams['amount_total'])),
+        'financialTypeChanged' => (!empty($grantParams['financial_type_id']) && ($previousGrant['financial_type_id'] != $grantParams['financial_type_id'])),
+        'multifundChanged' => (!empty($previousFund['multifund_amount']) && !empty(array_diff_assoc($previousFund['multifund_amount'], array_filter($grantParams['multifund_amount'])))),
+        'financialAccountChanged' => (!empty($previousFund['financial_account']) && !empty(array_diff_assoc($previousFund['financial_account'], array_filter($grantParams['financial_account'])))),
       ];
       if ($attributesChanged['statusChanged']) {
         if ($grantParams['status_id'] == array_search('Paid', $grantStatuses)) {
@@ -188,24 +207,39 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
           _createFinancialEntries($previousGrant['status_id'], $previousGrant, $grantParams);
         }
       }
-      elseif ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['amountChanged']) {
-        $multiEntries = _processMultiFundEntries($grantParams);
-        $entries = civicrm_api3('EntityFinancialTrxn', 'get', [
-          'entity_id' => $previousGrant['id'],
-          'entity_table' => 'civicrm_grant',
-          'sequential' => 1,
-        ])['values'];
-        // FIXME: Add function here to create new financial records.
-        foreach ($entries as $key => $entry) {
-          if (empty($multiEntries)) {
-            $newAmount = CRM_Utils_Rule::cleanMoney($grantParams['amount_total']);
-            $newFFAID = CRM_Core_DAO::getFieldValue('CRM_Core_BAO_FinancialTrxn', $entry['id'], 'from_financial_account_id');
+      if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['financialTypeChanged']) {
+        $reverseAmount = -$previousGrant['amount_total'];
+        $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($previousGrant['financial_type_id'], 'Accounts Receivable Account is');
+        _addFinancialEntries($financialAccountId, $reverseAmount, $grantParams, NULL, TRUE);
+        // Add new entry
+        $newFinancialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($grantParams['financial_type_id'], 'Accounts Receivable Account is');
+        _addFinancialEntries($newFinancialAccountId, $grantParams['amount_total'], $grantParams, NULL, TRUE);
+      }
+      if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['amountChanged']) {
+        if (!count(array_filter($grantParams['multifund_amount']))) {
+          $newAmount = $grantParams['amount_total'] - $previousGrant['amount_total'];
+          $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($grantParams['financial_type_id'], 'Accounts Receivable Account is');
+          _addFinancialEntries($financialAccountId, $newAmount, $grantParams, NULL, TRUE);
+        }
+      }
+      if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['financialAccountChanged']) {
+        $itemsToBeReversed = array_diff_assoc($previousFund['financial_account'], array_filter($grantParams['financial_account']));
+        foreach ($itemsToBeReversed as $key => $faId) {
+          $reverseAmount = -$previousFund['multifund_amount'][$key];
+          _addFinancialEntries($faId, $reverseAmount, $grantParams, NULL, TRUE);
+          // Add new entry
+          _addFinancialEntries($grantParams['financial_account'][$key], $grantParams['multifund_amount'][$key], $grantParams, NULL, TRUE);
+          $keysToIgnore[] = $key;
+        }
+      }
+      if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['multifundChanged']) {
+        $itemsToBeReversed = array_diff_assoc($previousFund['multifund_amount'], array_filter($grantParams['multifund_amount']));
+        foreach ($itemsToBeReversed as $key => $entry) {
+          if (!empty($keysToIgnore) && in_array($key, $keysToIgnore)) {
+            continue;
           }
-          else {
-            $newAmount = $multiEntries[$key]['total_amount'];
-            $newFFAID = $multiEntries[$key]['from_financial_account_id'];
-          }
-          _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $grantParams);
+          $newAmount = $grantParams['multifund_amount'][$key] - $previousFund['multifund_amount'][$key];
+          _addFinancialEntries($grantParams['financial_account'][$key], $newAmount, $grantParams, NULL, TRUE);
         }
       }
       elseif (!empty($params['contribution_batch_id'])) {
@@ -241,33 +275,35 @@ function _updateBatchEntry($batchID, $grantID) {
   }
 }
 
-function _updateFinancialEntries($entityFinancialTrxnID, $financialTrxnID, $newFFAID, $newAmount, $params) {
-    civicrm_api3('EntityFinancialTrxn', 'create', ['id' => $entityFinancialTrxnID, 'amount' => $newAmount]);
-    civicrm_api3('FinancialTrxn', 'create', [
-      'id' => $financialTrxnID,
+function _addFinancialEntries($newFFAID, $newAmount, $params, $financialTrxn, $addFT = FALSE) {
+  if ($addFT) {
+    $financialTrxn = civicrm_api3('FinancialTrxn', 'create', [
       'total_amount' => $newAmount,
-      'from_financial_account_id' => $newFFAID,
+      'to_financial_account_id' => CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Asset Account is') ?: E::getAssetFinancialAccountID(),
+      'status_id' => 'Completed',
+      'payment_instrument_id' => CRM_Core_PseudoConstant::getKey('CRM_Contribute_DAO_Contribution', 'payment_instrument_id', 'Check'),
       'check_number' => CRM_Utils_Array::value('check_number', $params),
       'trxn_id' => CRM_Utils_Array::value('trxn_id', $params),
       'trxn_date' => CRM_Utils_Array::value('trxn_date', $params, date('YmdHis')),
+      'entity_id' => CRM_Utils_Array::value('grant_id', $params, NULL),
+      'entity_table' => 'civicrm_grant',
+      'is_payment' => 1,
     ]);
-    $values = civicrm_api3('EntityFinancialTrxn', 'getsingle', [
-      'entity_table' => 'civicrm_financial_item',
-      'financial_trxn_id' => $financialTrxnID,
-      'options' => [
-        'limit' => 1,
-      ],
-    ]);
-
-    civicrm_api3('FinancialItem', 'create', [
-      'id' => $values['entity_id'],
-      'amount' => CRM_Utils_Rule::cleanMoney($params['amount_total']),
-      'financial_account_id' => CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Accounts Receivable Account is'),
-    ]);
-    civicrm_api3('EntityFinancialTrxn', 'create', [
-      'id' => $values['id'],
-      'amount' => $newAmount,
-    ]);
+  }
+  $contributionStatuses = CRM_Contribute_PseudoConstant::contributionStatus(NULL, 'name');
+  $itemParams = array(
+    'transaction_date' => date('YmdHis'),
+    'contact_id' => $params['contact_id'],
+    'currency' => $params['currency'],
+    'amount' => $newAmount,
+    'description' => CRM_Utils_Array::value('description', $params),
+    'status_id' => array_search('Completed', $contributionStatuses),
+    'financial_account_id' => $newFFAID,
+    'entity_table' => 'civicrm_grant',
+    'entity_id' => $params['grant_id'],
+  );
+  $trxnIds['id'] = $financialTrxn['id'];
+  $financialItemID = CRM_Financial_BAO_FinancialItem::create($itemParams, NULL, $trxnIds)->id;
 }
 
 function _setDefaultFinancialEntries($grantID, $getFTIDs = FALSE) {
@@ -352,16 +388,28 @@ function _createFinancialEntries($previousStatusID, $grantParams, $params) {
     }
   }
 
+  // Create financial trxn.
+  if ($currentStatusID == array_search('Paid', $grantStatuses)) {
+    $trxnParams['total_amount'] = $amount;
+    $trxnParams['payment_instrument_id'] = CRM_Core_PseudoConstant::getKey('CRM_Contribute_DAO_Contribution', 'payment_instrument_id', 'Check');
+    $trxnParams['check_number'] = CRM_Utils_Array::value('check_number', $params);
+    $trxnParams['trxn_id'] = CRM_Utils_Array::value('trxn_id', $params);
+    $trxnParams['is_payment'] = 1;
+    $trxnId = civicrm_api3('FinancialTrxn', 'create', $trxnParams);
+    civicrm_api3('EntityBatch', 'create', [
+      'entity_table' => 'civicrm_financial_trxn',
+      'entity_id' => $trxnId['id'],
+      'batch_id' => $params['contribution_batch_id'],
+    ]);
+  }
+
   $financialItemID = NULL;
   foreach ($multiEntries as $key => $entry) {
-    $trxnParams = array_merge($trxnParams, $entry);
-    $trxnId = CRM_Core_BAO_FinancialTrxn::create($trxnParams);
 
     if ($currentStatusID == array_search('Paid', $grantStatuses)) {
       E::processPaymentDetails([
         'trxn_id' => $params['trxn_id'],
-        'financial_trxn_id' => $trxnId->id,
-        'batch_id' => $params['contribution_batch_id'],
+        'financial_trxn_id' => $trxnId['id'],
         'check_number' => $params['check_number'],
         'description' => CRM_Utils_Array::value('description', $params),
       ]);
@@ -369,29 +417,22 @@ function _createFinancialEntries($previousStatusID, $grantParams, $params) {
 
     if ($createItem) {
       $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Accounts Receivable Account is');
-      if ($financialItemID) {
-        civicrm_api3('EntityFinancialTrxn', 'create', [
-          'entity_table' => 'civicrm_financial_item',
-          'entity_id' => $financialItemID,
-          'financial_trxn_id' => $trxnId->id,
-          'amount' => $entry['total_amount'],
-        ]);
+      if (!empty($entry['from_financial_account_id'])) {
+        $financialAccountId = $entry['from_financial_account_id'];
       }
-      else {
-        $itemParams = array(
-          'transaction_date' => date('YmdHis'),
-          'contact_id' => $grantParams['contact_id'],
-          'currency' => $grantParams['currency'],
-          'amount' => $entry['total_amount'],
-          'description' => CRM_Utils_Array::value('description', $params),
-          'status_id' => $financialItemStatusID,
-          'financial_account_id' => $financialAccountId,
-          'entity_table' => 'civicrm_grant',
-          'entity_id' => $grantParams['id'],
-        );
-        $trxnIds['id'] = $trxnId->id;
-        $financialItemID = CRM_Financial_BAO_FinancialItem::create($itemParams, NULL, $trxnIds)->id;
-      }
+      $itemParams = array(
+        'transaction_date' => date('YmdHis'),
+        'contact_id' => $grantParams['contact_id'],
+        'currency' => $grantParams['currency'],
+        'amount' => $entry['total_amount'],
+        'description' => CRM_Utils_Array::value('description', $params),
+        'status_id' => $financialItemStatusID,
+        'financial_account_id' => $financialAccountId,
+        'entity_table' => 'civicrm_grant',
+        'entity_id' => $grantParams['id'],
+      );
+      $trxnIds['id'] = $trxnId['id'];
+      $financialItemID = CRM_Financial_BAO_FinancialItem::create($itemParams, NULL, $trxnIds)->id;
     }
   }
 }
