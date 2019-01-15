@@ -207,23 +207,19 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
           _createFinancialEntries($previousGrant['status_id'], $previousGrant, $grantParams);
         }
       }
+      if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['financialTypeChanged']) {
+        $reverseAmount = -$previousGrant['amount_total'];
+        $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($previousGrant['financial_type_id'], 'Accounts Receivable Account is');
+        _addFinancialEntries($financialAccountId, $reverseAmount, $grantParams, NULL, TRUE);
+        // Add new entry
+        $newFinancialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($grantParams['financial_type_id'], 'Accounts Receivable Account is');
+        _addFinancialEntries($newFinancialAccountId, $grantParams['amount_total'], $grantParams, NULL, TRUE);
+      }
       if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['amountChanged']) {
-        $multiEntries = _processMultiFundEntries($grantParams);
-        $entries = civicrm_api3('EntityFinancialTrxn', 'get', [
-          'entity_id' => $previousGrant['id'],
-          'entity_table' => 'civicrm_grant',
-          'sequential' => 1,
-        ])['values'];
-        foreach ($entries as $key => $entry) {
-          if (empty($multiEntries)) {
-            $newAmount = CRM_Utils_Rule::cleanMoney($grantParams['amount_total']);
-            $newFFAID = CRM_Core_DAO::getFieldValue('CRM_Core_BAO_FinancialTrxn', $entry['id'], 'from_financial_account_id');
-          }
-          else {
-            $newAmount = $multiEntries[$key]['total_amount'];
-            $newFFAID = $multiEntries[$key]['from_financial_account_id'];
-          }
-          //_updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $grantParams);
+        if (!count(array_filter($grantParams['multifund_amount']))) {
+          $newAmount = $grantParams['amount_total'] - $previousGrant['amount_total'];
+          $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($grantParams['financial_type_id'], 'Accounts Receivable Account is');
+          _addFinancialEntries($financialAccountId, $newAmount, $grantParams, NULL, TRUE);
         }
       }
       if ($grantParams['status_id'] == array_search('Paid', $grantStatuses) && $attributesChanged['financialAccountChanged']) {
@@ -243,7 +239,7 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
             continue;
           }
           $newAmount = $grantParams['multifund_amount'][$key] - $previousFund['multifund_amount'][$key];
-          _addFinancialEntries($grantParams['financial_account'][$key], $newAmount, $grantParams, NULL, FALSE);
+          _addFinancialEntries($grantParams['financial_account'][$key], $newAmount, $grantParams, NULL, TRUE);
         }
       }
       elseif (!empty($params['contribution_batch_id'])) {
@@ -290,6 +286,8 @@ function _addFinancialEntries($newFFAID, $newAmount, $params, $financialTrxn, $a
       'trxn_id' => CRM_Utils_Array::value('trxn_id', $params),
       'trxn_date' => CRM_Utils_Array::value('trxn_date', $params, date('YmdHis')),
       'entity_id' => CRM_Utils_Array::value('grant_id', $params, NULL),
+      'entity_table' => 'civicrm_grant',
+      'is_payment' => 1,
     ]);
   }
   $contributionStatuses = CRM_Contribute_PseudoConstant::contributionStatus(NULL, 'name');
@@ -396,6 +394,7 @@ function _createFinancialEntries($previousStatusID, $grantParams, $params) {
     $trxnParams['payment_instrument_id'] = CRM_Core_PseudoConstant::getKey('CRM_Contribute_DAO_Contribution', 'payment_instrument_id', 'Check');
     $trxnParams['check_number'] = CRM_Utils_Array::value('check_number', $params);
     $trxnParams['trxn_id'] = CRM_Utils_Array::value('trxn_id', $params);
+    $trxnParams['is_payment'] = 1;
     $trxnId = civicrm_api3('FinancialTrxn', 'create', $trxnParams);
     civicrm_api3('EntityBatch', 'create', [
       'entity_table' => 'civicrm_financial_trxn',
