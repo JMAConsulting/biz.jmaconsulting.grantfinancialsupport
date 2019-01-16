@@ -175,8 +175,8 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
       $previousGrant = CRM_Core_Smarty::singleton()->get_template_vars('previousGrant');
       $grantStatuses = CRM_Core_OptionGroup::values('grant_status');
       $attributesChanged = [
-        'statusChanged' => (!empty($params['financial_type_id']) && ($params['status_id'] != $previousGrant['status_id'])),
-        'amountChanged' => ($previousGrant['amount_total'] != CRM_Utils_Rule::cleanMoney($params['amount_total'])),
+        'statusChanged' => (!empty($grantParams['financial_type_id']) && ($grantParams['status_id'] != $previousGrant['status_id'])),
+        'amountChanged' => ($previousGrant['amount_total'] != CRM_Utils_Rule::cleanMoney($grantParams['amount_total'])),
       ];
       if ($attributesChanged['statusChanged']) {
         if ($grantParams['status_id'] == array_search('Paid', $grantStatuses)) {
@@ -208,8 +208,8 @@ function grantfinancialsupport_civicrm_post($op, $objectName, $objectId, &$objec
           _updateFinancialEntries($entry['id'], $entry['financial_trxn_id'], $newFFAID, $newAmount, $grantParams);
         }
       }
-      elseif (!empty($params['contribution_batch_id'])) {
-        _updateBatchEntry($params['contribution_batch_id'], $id);
+      elseif (!empty($grantParams['contribution_batch_id'])) {
+        _updateBatchEntry($grantParams['contribution_batch_id'], $objectId);
       }
     }
   }
@@ -478,10 +478,14 @@ function grantfinancialsupport_civicrm_entityTypes(&$entityTypes) {
  * Implements hook_civicrm_preProcess().
  *
  * @link http://wiki.civicrm.org/confluence/display/CRMDOC/hook_civicrm_preProcess
- *
-function grantfinancialsupport_civicrm_preProcess($formName, &$form) {
+ **/
 
-} // */
+function grantfinancialsupport_civicrm_preProcess($formName, &$form) {
+  if ($formName == 'CRM_Financial_Form_FinancialTypeAccount') {
+     CRM_Financial_BAO_FinancialAccount::getfinancialAccountRelations(FALSE, TRUE);
+     Civi::$statics['CRM_Financial_BAO_FinancialAccount']['account_relationships']['Grant Expense Account is'] = 'Expenses';
+  }
+}
 
 /**
  * Implements hook_civicrm_navigationMenu().
