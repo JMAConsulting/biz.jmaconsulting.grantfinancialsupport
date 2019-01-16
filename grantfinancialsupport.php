@@ -290,6 +290,9 @@ function _addFinancialEntries($newFFAID, $newAmount, $params, $financialTrxn, $a
       'is_payment' => 1,
     ]);
   }
+  if (empty($params['currency']) && !empty($params['grant_id'])) {
+    $params['currency'] = CRM_Core_DAO::singleValueQuery("SELECT currency FROM civicrm_grant where id = {$params['grant_id']}");
+  }
   $contributionStatuses = CRM_Contribute_PseudoConstant::contributionStatus(NULL, 'name');
   $itemParams = array(
     'transaction_date' => date('YmdHis'),
