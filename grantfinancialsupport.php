@@ -482,7 +482,6 @@ function grantfinancialsupport_civicrm_entityTypes(&$entityTypes) {
 
 function grantfinancialsupport_civicrm_preProcess($formName, &$form) {
   if ($formName == 'CRM_Financial_Form_FinancialTypeAccount') {
-     CRM_Financial_BAO_FinancialAccount::getfinancialAccountRelations(FALSE, TRUE);
      Civi::$statics['CRM_Financial_BAO_FinancialAccount']['account_relationships']['Grant Expense Account is'] = 'Expenses';
   }
 }

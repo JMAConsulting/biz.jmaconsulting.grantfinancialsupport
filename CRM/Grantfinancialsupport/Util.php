@@ -156,7 +156,6 @@ class CRM_Grantfinancialsupport_Util {
   }
 
   public static function getFinancialTransactionsList() {
-    CRM_Core_Error::debug_var('a', 'a');
     $sortMapper = array(
       0 => '',
       1 => '',
@@ -191,6 +190,8 @@ class CRM_Grantfinancialsupport_Util {
       'civicrm_financial_trxn.payment_instrument_id as payment_method',
       'civicrm_contribution.contact_id as contact_id',
       'civicrm_contribution.id as contributionID',
+      'civicrm_grant.id as grantID',
+      'civicrm_grant.contact_id as grantContactID',
       'contact_a.sort_name',
       'civicrm_financial_trxn.total_amount as amount',
       'civicrm_financial_trxn.trxn_id as trxn_id',
@@ -299,13 +300,22 @@ class CRM_Grantfinancialsupport_Util {
         if (isset($notPresent)) {
           $js = "enableActions('x')";
           $row[$financialItem->id]['check'] = "<input type='checkbox' id='mark_x_" . $financialItem->id . "' name='mark_x_" . $financialItem->id . "' value='1' onclick={$js}></input>";
+          $links = CRM_Financial_Form_BatchTransaction::links();
+          if ($financialItem->grantID) {
+            $links['view'] = array(
+              'name' => ts('View'),
+              'url' => 'civicrm/contact/view/grant',
+              'qs' => 'reset=1&id=%%contid%%&cid=%%cid%%&action=view&context=grant&selectedChild=grant',
+              'title' => ts('View Grant'),
+            );
+          }
           $row[$financialItem->id]['action'] = CRM_Core_Action::formLink(
-            CRM_Financial_Form_BatchTransaction::links(),
+            $links,
             NULL,
             array(
               'id' => $financialItem->id,
-              'contid' => $financialItem->contributionID,
-              'cid' => $financialItem->contact_id,
+              'contid' => $financialItem->grantID ?: $financialItem->contributionID,
+              'cid' => $financialItem->grantContactID ?: $financialItem->contact_id,
             ),
             ts('more'),
             FALSE,
@@ -317,13 +327,22 @@ class CRM_Grantfinancialsupport_Util {
         else {
           $js = "enableActions('y')";
           $row[$financialItem->id]['check'] = "<input type='checkbox' id='mark_y_" . $financialItem->id . "' name='mark_y_" . $financialItem->id . "' value='1' onclick={$js}></input>";
+          $links = CRM_Financial_Page_BatchTransaction::links();
+          if ($financialItem->grantID) {
+            $links['view'] = array(
+              'name' => ts('View'),
+              'url' => 'civicrm/contact/view/grant',
+              'qs' => 'reset=1&id=%%contid%%&cid=%%cid%%&action=view&context=grant&selectedChild=grant',
+              'title' => ts('View Grant'),
+            );
+          }
           $row[$financialItem->id]['action'] = CRM_Core_Action::formLink(
-            CRM_Financial_Page_BatchTransaction::links(),
+            $links,
             NULL,
             array(
               'id' => $financialItem->id,
-              'contid' => $financialItem->contributionID,
-              'cid' => $financialItem->contact_id,
+              'contid' => $financialItem->grantID ?: $financialItem->contributionID,
+              'cid' => $financialItem->grantContactID ?: $financialItem->contact_id,
             ),
             ts('more'),
             FALSE,
@@ -337,14 +356,22 @@ class CRM_Grantfinancialsupport_Util {
         $row[$financialItem->id]['check'] = NULL;
         $tempBAO = new CRM_Financial_Page_BatchTransaction();
         $links = $tempBAO->links();
+        if ($financialItem->grantID) {
+          $links['view'] = array(
+            'name' => ts('View'),
+            'url' => 'civicrm/contact/view/grant',
+            'qs' => 'reset=1&id=%%contid%%&cid=%%cid%%&action=view&context=grant&selectedChild=grant',
+            'title' => ts('View Grant'),
+          );
+        }
         unset($links['remove']);
         $row[$financialItem->id]['action'] = CRM_Core_Action::formLink(
           $links,
           NULL,
           array(
             'id' => $financialItem->id,
-            'contid' => $financialItem->contributionID,
-            'cid' => $financialItem->contact_id,
+            'contid' => $financialItem->grantID ?: $financialItem->contributionID,
+            'cid' => $financialItem->grantContactID ?: $financialItem->contact_id,
           ),
           ts('more'),
           FALSE,
