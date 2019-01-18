@@ -368,7 +368,7 @@ function _createFinancialEntries($previousStatusID, $grantParams, $params) {
     }
 
     if ($createItem) {
-      $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], 'Accounts Receivable Account is');
+      $financialAccountId = CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($params['financial_type_id'], ['IN' => ['Grant Expense Account is', 'Expense Account is']]);
       if ($financialItemID) {
         civicrm_api3('EntityFinancialTrxn', 'create', [
           'entity_table' => 'civicrm_financial_item',
