@@ -127,19 +127,6 @@ function grantfinancialsupport_civicrm_validateForm($formName, &$fields, &$files
 }
 
 function grantfinancialsupport_civicrm_pageRun(&$page) {
-  if ($page->getVar('_name') == 'CRM_Contact_Page_DashBoard') {
-    $items = CRM_Core_BAO_Dashboard::getContactDashletsForJS();
-    $item = civicrm_api3('Dashboard', 'get', ['id' => 10]);
-    $items[1][] = array(
-      'id' => $item['id'],
-      'name' => $item['name'],
-      'title' => $item['label'],
-      'url' => CRM_Core_BAO_Dashboard::parseUrl($item['url']),
-      'cacheMinutes' => $item['cache_minutes'],
-      'fullscreenUrl' => CRM_Core_BAO_Dashboard::parseUrl($item['fullscreen_url']),
-    );
-    $page->assign('contactDashlets', $items);
-  }
   if ($page->getVar('_name') == "CRM_Grant_Page_Tab" && ($grantID = $page->getVar('_id'))) {
     $values = _setDefaultFinancialEntries($grantID);
     $attributes = [
@@ -158,29 +145,6 @@ function grantfinancialsupport_civicrm_pageRun(&$page) {
     ));
   }
 }
-
-function grantfinancialsupport_civicrm_alterReportVar($type, &$columns, &$form) {
-  if ('CRM_Report_Form_Activity' == get_class($form)) {
-    if ($type == 'columns') {
-      $columns['civicrm_activity_contact']['filters']['record_type_id'] = array(
-        'name' => 'record_type_id',
-        'title' => ts('Record type'),
-        'type' => CRM_Utils_Type::T_INT,
-        'operatorType' => CRM_Report_Form::OP_SELECT,
-        'options' => ['' => '- select -' ] + CRM_Activity_BAO_ActivityContact::buildOptions('record_type_id', 'validate'),
-      );
-    }
-    if ($type == 'sql' && CRM_Utils_Array::value("current_record_type_value", $form->getVar('_params')) == 1) {
-      $contactID = CRM_Core_Session::singleton()->get('userID');
-      $match = "contact_id = " . $contactID;
-      $replace = $match . " AND record_type_id = 1";
-      foreach ($form->sqlFormattedArray as $key => $sql) {
-        $form->sqlFormattedArray[$key] = str_replace($match, $replace, $sql);
-      }
-    }
-  }
-}
-
 
 function grantfinancialsupport_civicrm_pre($op, $objectName, $id, &$params) {
   if ($objectName == 'Grant' && in_array($op, ['edit', 'create'])) {
