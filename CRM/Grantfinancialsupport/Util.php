@@ -559,4 +559,15 @@ class CRM_Grantfinancialsupport_Util {
     return $result;
   }
 
+  /**
+   * @param int $financialTypeID
+   *
+   * @return int
+   */
+  public static function getCreditFinancialAccountID($financialTypeID) {
+    return CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($financialTypeID, 'Grant Expense Account is') ?:
+      CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($financialTypeID, 'Expense Account is') ?:
+       CRM_Contribute_PseudoConstant::getRelationalFinancialAccount($financialTypeID, 'Accounts Receivable Account is');
+  }
+
 }
