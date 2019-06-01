@@ -485,6 +485,23 @@ function grantfinancialsupport_civicrm_preProcess($formName, &$form) {
   }
 }
 
+
+function grantfinancialsupport_civicrm_links($op, $objectName, $objectId, &$links, &$mask, &$values) {
+  if ('FinancialItem' == $objectName && $op == 'financialItem.batch.row') {
+    $entityInfo = CRM_Core_DAO::executeQuery("SELECT entity_table, entity_id FROM civicrm_entity_financial_trxn WHERE financial_trxn_id = {$objectId} LIMIT 1")->fetchAll()[0];
+    if ($entityInfo['entity_table'] == 'civicrm_grant') {
+      $links['view'] = array(
+        'name' => ts('View'),
+        'url' => 'civicrm/contact/view/grant',
+        'qs' => 'reset=1&id=%%contid%%&cid=%%cid%%&action=view&context=grant&selectedChild=grant',
+        'title' => ts('View Grant'),
+      );
+      $values['contid'] = $entityInfo['entity_id'];
+      $values['cid'] = CRM_Core_DAO::singleValueQuery("SELECT contact_id FROM civicrm_grant WHERE id = " . $values['contid']);
+    }
+  }
+}
+
 /**
  * Implements hook_civicrm_navigationMenu().
  *
