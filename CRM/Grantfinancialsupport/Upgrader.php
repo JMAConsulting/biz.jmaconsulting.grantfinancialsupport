@@ -4,7 +4,7 @@ use CRM_Grantfinancialsupport_Util as E;
 /**
  * Collection of upgrade steps.
  */
-class CRM_Grantfinancialsupport_Upgrader extends CRM_Grantfinancialsupport_Upgrader_Base {
+class CRM_Grantfinancialsupport_Upgrader extends CRM_Extension_Upgrader_Base {
 
   public function install() {
     CRM_Core_BAO_ConfigSetting::enableComponent('CiviGrant');
